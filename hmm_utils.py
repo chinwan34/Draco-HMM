@@ -7,6 +7,8 @@ import pandas as pd
 from tqdm import tqdm
 from datetime import timedelta
 import matplotlib.pyplot as plt
+import datetime
+from dateutil import parser
 
 class HMMUtils:
     def __init__(self, ticker, resample_freq, format, day_future, start_date, end_date, test_size=0.33, n_hidden_states=4
@@ -56,6 +58,8 @@ class HMMUtils:
         observations = HMMUtils.extract_features(data)
         self.hmm.fit(observations)
 
+        # Need to save to pickle file
+
     def compute_all_possible_outcome(self, 
                                      n_intervals_frac_change, 
                                      n_intervals_frac_high,
@@ -100,16 +104,20 @@ class HMMUtils:
         predicted_close_prices = []
 
         for day_index in tqdm(range(self.days)):
-            predicted_close_prices.append(self.predict_price(day_index))
+            predicted_close_prices.append(self.predict_close_price(day_index))
         self.predicted_close = predicted_close_prices
 
         return predicted_close_prices
 
     def populate_future_days(self):
-        last_day = self.test_data.index[0] + timedelta(days=self.days_in_future)
-        future_dates = pd.date_range(
-            self.test_data.index[0] + pd.offsets.DateOffset(1), last_day
-        )
+        last_day = self.test_data.index[-1] + self.days_in_future
+        future_dates = pd.Index(range(self.test_data.index[-1], last_day+1))
+
+
+        # last_day = datetime.datetime.strptime(self.test_data.iloc[-1]["date"], "%Y-%m-%d").date() + timedelta(days=self.days_in_future)
+        # future_dates = pd.date_range(
+        #     datetime.datetime.strptime(self.test_data.iloc[-1]["date"], "%Y-%m-%d").date() + pd.offsets.DateOffset(1), last_day
+        # )
         new_df = pd.DataFrame(
             index=future_dates, columns=["high", "low", "open", "close"]
         )
@@ -117,6 +125,13 @@ class HMMUtils:
         self.test_data = pd.concat([self.test_data, new_df])
         # Replace opening price of 1st day in future with close price of last day
         self.test_data.iloc[self.days]["open"] = self.test_data.iloc[self.days-1]["close"]
+
+        print(self.test_data)
+    
+    def add_one_day(self, x):
+        new = parser.parse(x) + datetime.timedelta(days=1)
+        return new
+
 
     def predict_close_price_future_days(self, day_index):
         # Only predict a particular day and write into self.test_data
@@ -129,6 +144,8 @@ class HMMUtils:
         ) = self.get_most_probable_outcome(day_index)
         predicted_close_price = open_price * (1+predicted_frac_change)
 
+
+        self.test_data.iloc[day_index]["date"] = self.add_one_day(self.test_data.iloc[day_index-1]["date"])
         self.test_data.iloc[day_index]["close"] = predicted_close_price
         self.test_data.iloc[day_index]["high"] = open_price * (1 + pred_frac_high)
         self.test_data.iloc[day_index]["low"] = open_price * (1 - pred_frac_low)
@@ -154,7 +171,14 @@ class HMMUtils:
         
         self.predicted_close = predicted_close_prices
         return self.predicted_close
+
+
     
+    def real_predictor(self):
+        predicted_close_prices = []
+        for day_index in tqdm(range(len(self.test_data), len(self.test_data)+self.days_in_future)):
+            pass
+
     def real_close_prices(self):
         return self.test_data.loc[:, ["date", "close"]]
     

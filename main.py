@@ -20,6 +20,7 @@ def parse_arguments():
     parser.add_argument("-l", "--latency", type=int, help="Observation sequence duration")
     parser.add_argument("-m", "--metrics", action="store_true", default=False, help="Boolean for metric display")
     parser.add_argument("-p", "--plot", action="store_true", default=False, help="Boolean for plotting results")
+    parser.add_argument("-pm", "--predict_mode", action="store_true", default=False, help="If predict mode is utilized, test_data percentage returns to")
 
     return parser.parse_args()
 
@@ -33,10 +34,11 @@ def main_loop(arglist):
     predictor.fit()
 
     if arglist.metrics:
-        temp_list = predictor.real_close_prices()["close"].tolist()
-        predicted_close = temp_list[:-arglist.day_future]
+        # temp_list = predictor.real_close_prices()["close"].tolist()
+        # predicted_close = temp_list[:-arglist.day_future]
+        # predicted_close.extend(predictor.predict_close_prices_future_days())
 
-        predicted_close.extend(predictor.predict_close_prices_future_days())
+        predicted_close = predictor.predict_close_price_for_period()
         actual_close = predictor.real_close_prices()
         actual_close["Predicted_Close"] = predicted_close
         output_df = actual_close.rename(columns={"close": "Actual_Close"})
@@ -48,12 +50,11 @@ def main_loop(arglist):
             predictor.plot_results(output_df, arglist.ticker, arglist.day_future)
 
 
-    if arglist.day_future:
+    if arglist.day_future:        
         predictor.populate_future_days()
         future_pred_close = predictor.predict_close_prices_future_days()
 
         print(future_pred_close)
-
 
 if __name__ == '__main__':
     arglist = parse_arguments()
