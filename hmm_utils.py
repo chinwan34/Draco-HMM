@@ -7,7 +7,7 @@ from tqdm import tqdm
 from datetime import timedelta
 
 class HMMUtils:
-    def __init__(self, ticker, resample_freq, format, day_future, test_size=0.33, n_hidden_states=4
+    def __init__(self, ticker, resample_freq, format, day_future, start_date, end_date, test_size=0.33, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
         data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}.csv".format(ticker, resample_freq, format), delimiter=',')
         self.split_train_test_data(data, test_size)
@@ -144,5 +144,14 @@ class HMMUtils:
         
         self.predicted_close = predicted_close_prices
         return self.predicted_close
+    
+    def real_close_prices(self):
+        return self.test_data.loc[:, ["close"]]
+    
+    def calc_mse(self):
+        
+    
+
+
 
 
