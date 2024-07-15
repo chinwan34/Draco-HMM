@@ -1,15 +1,17 @@
 from hmmlearn import hmm
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import *
 import itertools
 import pandas as pd
 from tqdm import tqdm
 from datetime import timedelta
+import matplotlib.pyplot as plt
 
 class HMMUtils:
     def __init__(self, ticker, resample_freq, format, day_future, start_date, end_date, test_size=0.33, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
-        data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}.csv".format(ticker, resample_freq, format), delimiter=',')
+        data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(ticker, resample_freq, start_date), delimiter=',')
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
@@ -26,7 +28,8 @@ class HMMUtils:
 
         return model
     
-    def extract_features(self, data):
+    @staticmethod
+    def extract_features(data):
         open_price = np.array(data["open"])
         close_price = np.array(data["close"])
         high_price = np.array(data["high"])
@@ -43,13 +46,14 @@ class HMMUtils:
             data, test_size=test_size, shuffle=False
         )
         
-        self.train_data = self.train_data.drop(["divCash", "splitFactor", "volume", "adjClose", "adjHigh", "adjOpen", "adjVolume"])
-        self.test_data = self.test_data.drop(["divCash", "splitFactor", "volume", "adjClose", "adjHigh", "adjOpen", "adjVolume"])
+        self.train_data = self.train_data.drop(["volume", "adjClose", "adjHigh", "adjLow", "adjOpen", "adjVolume", "divCash", "splitFactor"], axis=1)
+        self.test_data = self.test_data.drop(["volume", "adjClose", "adjHigh", "adjLow", "adjOpen", "adjVolume", "divCash", "splitFactor"], axis=1)
     
         self.days = len(self.test_data)
 
     def fit(self):
-        observations = HMMUtils.extract_features(self.train_data)
+        data = self.train_data
+        observations = HMMUtils.extract_features(data)
         self.hmm.fit(observations)
 
     def compute_all_possible_outcome(self, 
@@ -134,8 +138,14 @@ class HMMUtils:
     def predict_close_prices_future_days(self):
         predicted_close_prices = []
         future_indices = len(self.test_data) - self.days_in_future
+        print(
+            "Predicting future Close prices from "
+            + str(self.test_data.iloc[future_indices]["date"])
+            + " to "
+            + str(self.test_data.iloc[-1]["date"])
+        )
 
-        for day_index in tqdm(future_indices, len(self.test_data)):
+        for day_index in tqdm(range(future_indices, len(self.test_data))):
             predicted_close_prices.append(self.predict_close_price_future_days(day_index))
             try:
                 self.test_data.iloc[day_index+1]["open"] = self.test_data.iloc[day_index]["close"]
@@ -146,9 +156,26 @@ class HMMUtils:
         return self.predicted_close
     
     def real_close_prices(self):
-        return self.test_data.loc[:, ["close"]]
+        return self.test_data.loc[:, ["date", "close"]]
     
-    def calc_mse(self):
+    def calc_mse(self, df):
+        actual_array = (df.loc[:, "Actual_Close"]).values
+        pred_array = (df.loc[:, "Predicted_Close"]).values
+        mse = mean_squared_error(actual_array, pred_array)
+        return mse
+    
+    def plot_results(self, in_df, stock_name, day_future):
+        in_df = in_df.reset_index()  # Required for plotting
+        in_df = in_df.tail(day_future)
+        ax = plt.gca()
+        in_df.plot(kind="line", x="date", y="Actual_Close", ax=ax)
+        in_df.plot(kind="line", x="date", y="Predicted_Close", color="red", ax=ax)
+        plt.ylabel("Daily Close Price (in USD)")
+        plt.title(str(stock_name) + " daily closing stock prices")
+        # save_dir = f"{out_dir}/{stock_name}_results_plot.png"
+        # plt.savefig(save_dir)
+        plt.show()
+        plt.close("all")
         
     
 
