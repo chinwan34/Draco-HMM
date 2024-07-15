@@ -3,17 +3,22 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import itertools
 import pandas as pd
+from tqdm import tqdm
+from datetime import timedelta
 
 class HMMUtils:
     def __init__(self, ticker, resample_freq, format, day_future, test_size=0.33, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
         data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}.csv".format(ticker, resample_freq, format), delimiter=',')
         self.split_train_test_data(data, test_size)
+        
+        # Currently avoided initial training for initial probabilities
         self.hmm = hmm.GaussianHMM(n_components=n_hidden_states)
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = day_future
         self.latency = n_latency_days
+        self.predicted_close = None
 
 
     def GMM_HMM(self, O, lengths, n_states, v_type, n_iter, verbose=True):
@@ -70,9 +75,74 @@ class HMMUtils:
 
         for possible_outcome in self.possible_outcomes:
             total_data = np.row_stack((previous_data_features, possible_outcome))
+            # Compute through hmmlearn module
             outcome_results.append(self.hmm.score(total_data))
         
         most_probable_outcome = self.possible_outcomes[np.argmax(outcome_results)]
 
         return most_probable_outcome
     
+    def predict_close_price(self, day_index):
+        open_price = self.test_data.iloc[day_index]["open"]
+        (
+            predicted_frac_change,
+            _,
+            _,
+        ) = self.get_most_probable_outcome(day_index)
+
+        return open_price * (1+predicted_frac_change)
+    
+    def predict_close_price_for_period(self):
+        predicted_close_prices = []
+
+        for day_index in tqdm(range(self.days)):
+            predicted_close_prices.append(self.predict_price(day_index))
+        self.predicted_close = predicted_close_prices
+
+        return predicted_close_prices
+
+    def populate_future_days(self):
+        last_day = self.test_data.index[0] + timedelta(days=self.days_in_future)
+        future_dates = pd.date_range(
+            self.test_data.index[0] + pd.offsets.DateOffset(1), last_day
+        )
+        new_df = pd.DataFrame(
+            index=future_dates, columns=["high", "low", "open", "close"]
+        )
+
+        self.test_data = pd.concat([self.test_data, new_df])
+        # Replace opening price of 1st day in future with close price of last day
+        self.test_data.iloc[self.days]["open"] = self.test_data.iloc[self.days-1]["close"]
+
+    def predict_close_price_future_days(self, day_index):
+        # Only predict a particular day and write into self.test_data
+        open_price = self.test_data.iloc[day_index]["open"]
+
+        (
+            predicted_frac_change,
+            pred_frac_high,
+            pred_frac_low,
+        ) = self.get_most_probable_outcome(day_index)
+        predicted_close_price = open_price * (1+predicted_frac_change)
+
+        self.test_data.iloc[day_index]["close"] = predicted_close_price
+        self.test_data.iloc[day_index]["high"] = open_price * (1 + pred_frac_high)
+        self.test_data.iloc[day_index]["low"] = open_price * (1 - pred_frac_low)
+
+        return predicted_close_price
+
+    def predict_close_prices_future_days(self):
+        predicted_close_prices = []
+        future_indices = len(self.test_data) - self.days_in_future
+
+        for day_index in tqdm(future_indices, len(self.test_data)):
+            predicted_close_prices.append(self.predict_close_price_future_days(day_index))
+            try:
+                self.test_data.iloc[day_index+1]["open"] = self.test_data.iloc[day_index]["close"]
+            except IndexError:
+                continue
+        
+        self.predicted_close = predicted_close_prices
+        return self.predicted_close
+
+
