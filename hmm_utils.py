@@ -165,7 +165,6 @@ class HMMUtils:
         self.checkpoint = self.test_data.loc[future_indices-1, "close"]
 
         for day_index in tqdm(range(future_indices, len(self.test_data))):
-            print(self.test_data.tail(10))
             predicted_close_prices.append(self.predict_close_price_future_days(day_index))
             try:
                 self.test_data.loc[day_index+1, "open"] = self.test_data.iloc[day_index]["close"]

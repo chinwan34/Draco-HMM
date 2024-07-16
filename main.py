@@ -14,9 +14,13 @@ def parse_arguments():
     parser.add_argument("-df", "--day_future", type=int, required=False, default=None, help="How many days to predict")
     parser.add_argument("-ts", "--test_size", type=float, help="The percentage of data for testing")
     parser.add_argument("-n", "--hidden_states", type=int, help="Number of hidden states for training")
+
+    # Not yet checked
     parser.add_argument("-nifc", "--n_interval_frac_change", type=int, help="Number of points for fractional change")
     parser.add_argument("-nifh", "--n_interval_frac_high", type=int, help="Number of points for high fractional change")
     parser.add_argument("-nifl", "--n_interval_fractional_low", type=int, help="Number of points for low fractional change")
+
+    
     parser.add_argument("-l", "--latency", type=int, help="Observation sequence duration")
     parser.add_argument("-m", "--metrics", action="store_true", default=False, help="Boolean for metric display")
     parser.add_argument("-p", "--plot", action="store_true", default=False, help="Boolean for plotting results")
