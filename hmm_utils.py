@@ -17,7 +17,7 @@ class HMMUtils:
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
-        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states)
+        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, covariance_type="diag", n_iter=1000)
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = arglist.day_future
@@ -181,7 +181,6 @@ class HMMUtils:
             print("Hold signal detected: {}".format(0))
         else:
             print("Sell signal detected: {}".format(-1))
-    
 
     def real_close_prices(self):
         print(self.test_data.loc[:, ["date", "close"]])

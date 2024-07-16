@@ -3,7 +3,7 @@ import requests
 api_key = "49859e3a95b4d7278db3909b95cb4ae0f81a63be"
 
 def data_retrival(ticker, resampleFreq, format, start_date):
-    if ticker == "" or resampleFreq == "" or format == "":
+    if ticker == "" or resampleFreq == "" or format == "" or start_date == "":
         print("Not enough input for data retrieval")
         return 
 
