@@ -28,10 +28,9 @@ def main_loop(arglist):
     if not exists("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date)):
         data_retrival(arglist.ticker, arglist.resampleFreq, arglist.format, arglist.start_date)
 
-    predictor = HMMUtils(
-        arglist.ticker, arglist.resampleFreq, arglist.format, arglist.day_future, arglist.start_date, arglist.end_date
-    )
+    predictor = HMMUtils(arglist=arglist)
     predictor.fit()
+    print("Fit finished")
 
     if arglist.metrics:
         # temp_list = predictor.real_close_prices()["close"].tolist()
@@ -40,11 +39,16 @@ def main_loop(arglist):
 
         predicted_close = predictor.predict_close_price_for_period()
         actual_close = predictor.real_close_prices()
+        if actual_close.iloc[-1].isnull().any():
+            actual_close = actual_close.iloc[:-1]
+
         actual_close["Predicted_Close"] = predicted_close
+
+        print(actual_close.iloc["Predicted_Close"], actual_close.iloc["Actual_Close"])
         output_df = actual_close.rename(columns={"close": "Actual_Close"})
 
-        mse = predictor.calc_mse(output_df)
-        print(mse)
+        # mse = predictor.calc_mse(output_df)
+        # print(mse)
     
         if arglist.plot:
             predictor.plot_results(output_df, arglist.ticker, arglist.day_future)

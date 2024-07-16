@@ -11,17 +11,21 @@ import datetime
 from dateutil import parser
 
 class HMMUtils:
-    def __init__(self, ticker, resample_freq, format, day_future, start_date, end_date, test_size=0.33, n_hidden_states=4
+    def __init__(self, arglist, test_size=0.33, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
-        data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(ticker, resample_freq, start_date), delimiter=',')
+        data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date), delimiter=',')
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
         self.hmm = hmm.GaussianHMM(n_components=n_hidden_states)
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
-        self.days_in_future = day_future
-        self.latency = n_latency_days
+        self.days_in_future = arglist.day_future
+
+        if arglist.latency:
+            self.latency = arglist.latency
+        else:
+            self.latency = n_latency_days
         self.predicted_close = None
 
 
@@ -87,6 +91,7 @@ class HMMUtils:
             outcome_results.append(self.hmm.score(total_data))
         
         most_probable_outcome = self.possible_outcomes[np.argmax(outcome_results)]
+        print("Most probable Outcome", most_probable_outcome)
 
         return most_probable_outcome
     
@@ -105,13 +110,14 @@ class HMMUtils:
 
         for day_index in tqdm(range(self.days)):
             predicted_close_prices.append(self.predict_close_price(day_index))
+            print(predicted_close_prices)
         self.predicted_close = predicted_close_prices
 
         return predicted_close_prices
 
     def populate_future_days(self):
         last_day = self.test_data.index[-1] + self.days_in_future
-        future_dates = pd.Index(range(self.test_data.index[-1], last_day+1))
+        future_dates = pd.Index(range(self.test_data.index[-1]+1, last_day))
 
 
         # last_day = datetime.datetime.strptime(self.test_data.iloc[-1]["date"], "%Y-%m-%d").date() + timedelta(days=self.days_in_future)
@@ -121,17 +127,17 @@ class HMMUtils:
         new_df = pd.DataFrame(
             index=future_dates, columns=["high", "low", "open", "close"]
         )
-
         self.test_data = pd.concat([self.test_data, new_df])
+
         # Replace opening price of 1st day in future with close price of last day
         self.test_data.iloc[self.days]["open"] = self.test_data.iloc[self.days-1]["close"]
+        # self.test_data.fillna(0, inplace=True)
+        self.test_data.reset_index(drop=True, inplace=True)
 
-        print(self.test_data)
-    
-    def add_one_day(self, x):
-        new = parser.parse(x) + datetime.timedelta(days=1)
-        return new
-
+    def add_one_day(self, date):
+        date = datetime.datetime.strptime(date, "%Y-%m-%d")
+        new_date = date + timedelta(days=1)
+        return new_date.strftime("%Y-%m-%d")
 
     def predict_close_price_future_days(self, day_index):
         # Only predict a particular day and write into self.test_data
@@ -145,41 +151,32 @@ class HMMUtils:
         predicted_close_price = open_price * (1+predicted_frac_change)
 
 
-        self.test_data.iloc[day_index]["date"] = self.add_one_day(self.test_data.iloc[day_index-1]["date"])
-        self.test_data.iloc[day_index]["close"] = predicted_close_price
-        self.test_data.iloc[day_index]["high"] = open_price * (1 + pred_frac_high)
-        self.test_data.iloc[day_index]["low"] = open_price * (1 - pred_frac_low)
+        print("CURRENT INDEX", day_index)
+        new_date = self.add_one_day(self.test_data.loc[day_index-1]["date"])
+        self.test_data.loc[day_index, "date"] = new_date
+        self.test_data.loc[day_index, "close"] = predicted_close_price
+        self.test_data.loc[day_index, "high"] = open_price * (1 + pred_frac_high)
+        self.test_data.loc[day_index, "low"] = open_price * (1 - pred_frac_low)
 
         return predicted_close_price
 
     def predict_close_prices_future_days(self):
         predicted_close_prices = []
         future_indices = len(self.test_data) - self.days_in_future
-        print(
-            "Predicting future Close prices from "
-            + str(self.test_data.iloc[future_indices]["date"])
-            + " to "
-            + str(self.test_data.iloc[-1]["date"])
-        )
 
         for day_index in tqdm(range(future_indices, len(self.test_data))):
             predicted_close_prices.append(self.predict_close_price_future_days(day_index))
             try:
-                self.test_data.iloc[day_index+1]["open"] = self.test_data.iloc[day_index]["close"]
+                self.test_data.loc[day_index+1, "open"] = self.test_data.iloc[day_index]["close"]
             except IndexError:
                 continue
         
         self.predicted_close = predicted_close_prices
         return self.predicted_close
 
-
-    
-    def real_predictor(self):
-        predicted_close_prices = []
-        for day_index in tqdm(range(len(self.test_data), len(self.test_data)+self.days_in_future)):
-            pass
-
     def real_close_prices(self):
+        print(self.test_data.loc[:, ["date", "close"]])
+
         return self.test_data.loc[:, ["date", "close"]]
     
     def calc_mse(self, df):
@@ -190,7 +187,7 @@ class HMMUtils:
     
     def plot_results(self, in_df, stock_name, day_future):
         in_df = in_df.reset_index()  # Required for plotting
-        in_df = in_df.tail(day_future)
+        # in_df = in_df.tail(day_future)
         ax = plt.gca()
         in_df.plot(kind="line", x="date", y="Actual_Close", ax=ax)
         in_df.plot(kind="line", x="date", y="Predicted_Close", color="red", ax=ax)
