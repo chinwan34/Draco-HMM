@@ -57,8 +57,8 @@ def main_loop(arglist):
     if arglist.day_future:        
         predictor.populate_future_days()
         future_pred_close = predictor.predict_close_prices_future_days()
+        predictor.final_prediction_strategy(future_pred_close)
 
-        print(future_pred_close)
 
 if __name__ == '__main__':
     arglist = parse_arguments()
