@@ -30,7 +30,7 @@ def parse_arguments():
     return parser.parse_args()
 
 def main_loop(arglist):
-    # if not exists("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date)):
+    # if not exists("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date)):  
     data_retrival(arglist.ticker, arglist.resampleFreq, arglist.format, arglist.start_date)
 
     predictor = HMMUtils(arglist=arglist)
@@ -50,20 +50,22 @@ def main_loop(arglist):
         actual_close["Predicted_Close"] = predicted_close
         actual_close["Predicted_Win_Lose"] = predicted_win_lose
 
-        actual_close.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/{}_{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, actual_close.iloc[0]["date"], arglist.random_state))
         output_df = actual_close.rename(columns={"close": "Actual_Close"})
+        output_df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/{}_{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, actual_close.iloc[0]["date"], arglist.random_state))
 
         mse = predictor.calc_mse(output_df)
         print("MSE Result: ", mse)
 
-        if not exists ("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test"):
-            mse_df = pd.DataFrame(columns=["Seed", "Sample_Date", "MSE"])
-        else:
-            mse_df = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test", delimiter=',')
-        if not ((mse_df['Seed'] == arglist.random_state) & (mse_df["Sample_Date"] == actual_close.iloc[0]["date"]) & (mse_df["MSE"] == mse)).any():
-            mse_df.loc[len(mse_df.index)] = [arglist.random_state, actual_close.iloc[0]["date"], mse]
+    if not exists ("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test"):
+        mse_df = pd.DataFrame(columns=["Seed", "Sample_Date", "MSE"])
+    else:
+        mse_df = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test", delimiter=',')
+    if not ((mse_df['Seed'] == arglist.random_state) & (mse_df["Sample_Date"] == output_df.iloc[0]["date"]) & (mse_df["MSE"] == mse)).any():
+        new_index = [[arglist.random_state, output_df.iloc[0]["date"], mse]]
+        df_extended = pd.DataFrame(new_index, columns=['Seed', 'Sample_Date', 'MSE'])
+        mse_df = pd.concat([mse_df, df_extended], ignore_index=True)
             
-        mse_df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test")
+        mse_df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test", index=False)
 
     
         if arglist.plot:

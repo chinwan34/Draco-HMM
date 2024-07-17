@@ -11,7 +11,7 @@ import datetime
 from dateutil import parser
 
 class HMMUtils:
-    def __init__(self, arglist, test_size=0.236, n_hidden_states=4
+    def __init__(self, arglist, test_size=0.098, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
         data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date), delimiter=',')
         self.split_train_test_data(data, test_size)

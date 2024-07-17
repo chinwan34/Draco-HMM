@@ -1,4 +1,4 @@
-,date,close,Predicted_Close,Predicted_Win_Lose
+,date,Actual_Close,Predicted_Close,Predicted_Win_Lose
 4806,2024-06-10,535.66,534.2681224489795,1
 4807,2024-06-11,536.95,535.1599387755102,1
 4808,2024-06-12,541.36,540.5246326530612,-1
