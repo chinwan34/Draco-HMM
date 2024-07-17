@@ -5,7 +5,7 @@ import argparse
 from os.path import exists
 
 def parse_arguments():
-    parser = argparse.ArgumentParser("Overcooked 2 argument parser")
+    parser = argparse.ArgumentParser("Argument parser")
     parser.add_argument("-t", "--ticker", type=str, required=True, help="Symbol for data retrieval")
     parser.add_argument("-r", "--resampleFreq", type=str, required=True, help="The interval of data, all lower cases (weekly, monthly...)")
     parser.add_argument("-f", "--format", type=str, required=True, help="Either csv or json")
@@ -14,13 +14,14 @@ def parse_arguments():
     parser.add_argument("-df", "--day_future", type=int, required=False, default=None, help="How many days to predict")
     parser.add_argument("-ts", "--test_size", type=float, help="The percentage of data for testing")
     parser.add_argument("-n", "--hidden_states", type=int, help="Number of hidden states for training")
+    parser.add_argument("-ran", "--random_state", type=int, default=None, help="The random seed for the Gaussian HMM")
 
     # Not yet checked
     parser.add_argument("-nifc", "--n_interval_frac_change", type=int, help="Number of points for fractional change")
     parser.add_argument("-nifh", "--n_interval_frac_high", type=int, help="Number of points for high fractional change")
     parser.add_argument("-nifl", "--n_interval_fractional_low", type=int, help="Number of points for low fractional change")
 
-    
+
     parser.add_argument("-l", "--latency", type=int, help="Observation sequence duration")
     parser.add_argument("-m", "--metrics", action="store_true", default=False, help="Boolean for metric display")
     parser.add_argument("-p", "--plot", action="store_true", default=False, help="Boolean for plotting results")
@@ -29,8 +30,8 @@ def parse_arguments():
     return parser.parse_args()
 
 def main_loop(arglist):
-    if not exists("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date)):
-        data_retrival(arglist.ticker, arglist.resampleFreq, arglist.format, arglist.start_date)
+    # if not exists("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date)):
+    data_retrival(arglist.ticker, arglist.resampleFreq, arglist.format, arglist.start_date)
 
     predictor = HMMUtils(arglist=arglist)
     predictor.fit()
@@ -40,19 +41,30 @@ def main_loop(arglist):
         # temp_list = predictor.real_close_prices()["close"].tolist()
         # predicted_close = temp_list[:-arglist.day_future]
         # predicted_close.extend(predictor.predict_close_prices_future_days())
-
-        predicted_close = predictor.predict_close_price_for_period()
+        actual_close = predictor.real_close_prices()
+        predicted_close, predicted_win_lose = predictor.predict_close_price_for_period()
         actual_close = predictor.real_close_prices()
         if actual_close.iloc[-1].isnull().any():
             actual_close = actual_close.iloc[:-1]
 
         actual_close["Predicted_Close"] = predicted_close
+        actual_close["Predicted_Win_Lose"] = predicted_win_lose
 
-        print(actual_close.iloc["Predicted_Close"], actual_close.iloc["Actual_Close"])
+        actual_close.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/{}_{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, actual_close.iloc[0]["date"], arglist.random_state))
         output_df = actual_close.rename(columns={"close": "Actual_Close"})
 
-        # mse = predictor.calc_mse(output_df)
-        # print(mse)
+        mse = predictor.calc_mse(output_df)
+        print("MSE Result: ", mse)
+
+        if not exists ("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test"):
+            mse_df = pd.DataFrame(columns=["Seed", "Sample_Date", "MSE"])
+        else:
+            mse_df = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test", delimiter=',')
+        if not ((mse_df['Seed'] == arglist.random_state) & (mse_df["Sample_Date"] == actual_close.iloc[0]["date"]) & (mse_df["MSE"] == mse)).any():
+            mse_df.loc[len(mse_df.index)] = [arglist.random_state, actual_close.iloc[0]["date"], mse]
+            
+        mse_df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test")
+
     
         if arglist.plot:
             predictor.plot_results(output_df, arglist.ticker, arglist.day_future)

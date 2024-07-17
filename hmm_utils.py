@@ -11,13 +11,13 @@ import datetime
 from dateutil import parser
 
 class HMMUtils:
-    def __init__(self, arglist, test_size=0.05, n_hidden_states=4
+    def __init__(self, arglist, test_size=0.236, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
         data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date), delimiter=',')
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
-        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, covariance_type="diag", n_iter=1000)
+        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, random_state=arglist.random_state)
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = arglist.day_future
@@ -58,8 +58,7 @@ class HMMUtils:
         self.days = len(self.test_data)
 
     def fit(self):
-        data = self.train_data
-        observations = HMMUtils.extract_features(data)
+        observations = HMMUtils.extract_features(self.train_data)
         self.hmm.fit(observations)
 
         # Need to save to pickle file
@@ -107,13 +106,20 @@ class HMMUtils:
     
     def predict_close_price_for_period(self):
         predicted_close_prices = []
+        predicted_win_lose = []
 
         for day_index in tqdm(range(self.days)):
-            predicted_close_prices.append(self.predict_close_price(day_index))
-            print(predicted_close_prices)
+            close_price = self.predict_close_price(day_index)
+
+            predicted_close_prices.append(close_price)
+            if self.test_data.iloc[day_index]["open"] < close_price:
+                predicted_win_lose.append(1)
+            else:
+                predicted_win_lose.append(-1)
+            print(self.test_data.iloc[day_index]["date"])
         self.predicted_close = predicted_close_prices
 
-        return predicted_close_prices
+        return predicted_close_prices, predicted_win_lose
 
     def populate_future_days(self):
         last_day = self.test_data.index[-1] + self.days_in_future
@@ -183,8 +189,6 @@ class HMMUtils:
             print("Sell signal detected: {}".format(-1))
 
     def real_close_prices(self):
-        print(self.test_data.loc[:, ["date", "close"]])
-
         return self.test_data.loc[:, ["date", "close"]]
     
     def calc_mse(self, df):
