@@ -14,6 +14,7 @@ class HMMUtils:
     def __init__(self, arglist, test_size=0.098, n_hidden_states=4
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
         data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date), delimiter=',')
+        self.arglist = arglist
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
@@ -209,9 +210,18 @@ class HMMUtils:
         # plt.savefig(save_dir)
         plt.show()
         plt.close("all")
-        
     
+    def prediction_correctness(self, x):
+        if (x["Actual_Close"] > x["open"] and x["Predicted_Close"] > x["open"]) or (x["Actual_Close"] < x["open"] and x["Predicted_Close"] < x["open"]):
+            return 1
+        else:
+            return 0
 
-
-
-
+    def calc_accuracy(self):
+        df = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/{}_{}_{}_{}".format(self.arglist.ticker, self.arglist.resampleFreq, self.test_data.iloc[0]["date"], self.arglist.random_state))
+        df = df.assign(open=self.test_data.loc[:, "open"].values)
+        new_df = df.apply(self.prediction_correctness, axis=1).reset_index(name='correct_prediction')
+        df = pd.concat([df, new_df], axis=1)
+        df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/New_{}_{}_{}_{}".format(self.arglist.ticker, self.arglist.resampleFreq, self.test_data.iloc[0]["date"], self.arglist.random_state), index=False)
+        accuracy = (df["correct_prediction"] == 1).sum() / (len(df.index))
+        return accuracy

@@ -54,7 +54,9 @@ def main_loop(arglist):
         output_df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/{}_{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, actual_close.iloc[0]["date"], arglist.random_state))
 
         mse = predictor.calc_mse(output_df)
+        accuracy = predictor.calc_accuracy()
         print("MSE Result: ", mse)
+        print("Accuracy Result: ", accuracy)
 
     if not exists ("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test"):
         mse_df = pd.DataFrame(columns=["Seed", "Sample_Date", "MSE"])
@@ -76,6 +78,7 @@ def main_loop(arglist):
         predictor.populate_future_days()
         future_pred_close = predictor.predict_close_prices_future_days()
         predictor.final_prediction_strategy(future_pred_close)
+
 
 
 if __name__ == '__main__':
