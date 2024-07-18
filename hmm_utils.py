@@ -18,7 +18,7 @@ class HMMUtils:
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
-        self.hmm = hmm.GMMHMM(n_components=n_hidden_states, random_state=arglist.random_state)
+        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, random_state=arglist.random_state)
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = arglist.day_future
@@ -91,7 +91,7 @@ class HMMUtils:
             outcome_results.append(self.hmm.score(total_data))
         
         most_probable_outcome = self.possible_outcomes[np.argmax(outcome_results)]
-        print("Most probable Outcome", most_probable_outcome)
+        # print("Most probable Outcome", most_probable_outcome)
 
         return most_probable_outcome
     
@@ -121,6 +121,45 @@ class HMMUtils:
         self.predicted_close = predicted_close_prices
 
         return predicted_close_prices, predicted_win_lose
+
+    def predict_close_price_average(self, days):
+        predicted_close_prices = []
+        predicted_win_lose = []
+        correct_wrong = []
+        counter = 0
+
+        for day_index in tqdm(self.range_help(self.days, days)):
+            close_price = self.predict_close_price(day_index)
+            predicted_close_prices.append(close_price)
+            open_avg = (self.test_data.iloc[day_index:day_index+days]["open"].sum())/days
+            close_avg = (self.test_data.iloc[day_index:day_index+days]["close"].sum())/days
+
+            if open_avg < close_price:
+                predicted_win_lose.append(1)
+            else:
+                predicted_win_lose.append(-1)
+            
+            if (open_avg > close_avg and open_avg > close_price) or (open_avg < close_avg and open_avg < close_price):
+                correct_wrong.append(1)
+                counter+=1
+            else:
+                correct_wrong.append(0)                
+
+            print(self.test_data.iloc[day_index]["date"])
+            print("Current %: ", counter/len(correct_wrong))
+        self.predicted_close = predicted_close_prices
+        accuracy = sum([1 for x in correct_wrong if x == 1]) / len(correct_wrong)
+        print("Accuracy for {} day average: ".format(days), accuracy)
+
+        return predicted_close_prices, predicted_win_lose
+
+    def range_help(self, end, step):
+        i = 0
+        while i < end:
+            yield i
+            i += step 
+        yield end - 1
+
 
     def populate_future_days(self):
         last_day = self.test_data.index[-1] + self.days_in_future

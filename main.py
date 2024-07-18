@@ -15,6 +15,7 @@ def parse_arguments():
     parser.add_argument("-ts", "--test_size", type=float, help="The percentage of data for testing")
     parser.add_argument("-n", "--hidden_states", type=int, help="Number of hidden states for training")
     parser.add_argument("-ran", "--random_state", type=int, default=None, help="The random seed for the Gaussian HMM")
+    parser.add_argument("-da", "--days_average", type=int, help="The average number of days in interval")
 
     # Not yet checked
     parser.add_argument("-nifc", "--n_interval_frac_change", type=int, help="Number of points for fractional change")
@@ -36,6 +37,11 @@ def main_loop(arglist):
     predictor = HMMUtils(arglist=arglist)
     predictor.fit()
     print("Fit finished")
+    predictor.predict_close_price_average(arglist.days_average)
+
+    return
+
+
 
     if arglist.metrics:
         # temp_list = predictor.real_close_prices()["close"].tolist()
