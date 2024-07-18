@@ -18,7 +18,7 @@ class HMMUtils:
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
-        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, random_state=arglist.random_state)
+        self.hmm = hmm.GMMHMM(n_components=n_hidden_states, random_state=arglist.random_state)
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = arglist.day_future

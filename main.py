@@ -59,12 +59,12 @@ def main_loop(arglist):
         print("Accuracy Result: ", accuracy)
 
     if not exists ("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test"):
-        mse_df = pd.DataFrame(columns=["Seed", "Sample_Date", "MSE"])
+        mse_df = pd.DataFrame(columns=["Seed", "Sample_Date", "MSE", "Accuracy"])
     else:
         mse_df = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test", delimiter=',')
-    if not ((mse_df['Seed'] == arglist.random_state) & (mse_df["Sample_Date"] == output_df.iloc[0]["date"]) & (mse_df["MSE"] == mse)).any():
-        new_index = [[arglist.random_state, output_df.iloc[0]["date"], mse]]
-        df_extended = pd.DataFrame(new_index, columns=['Seed', 'Sample_Date', 'MSE'])
+    if not ((mse_df['Seed'] == arglist.random_state) & (mse_df["Sample_Date"] == output_df.iloc[0]["date"]) & (mse_df["MSE"] == mse) & (mse_df["Accuracy"] == accuracy)).any():
+        new_index = [[arglist.random_state, output_df.iloc[0]["date"], mse, accuracy]]
+        df_extended = pd.DataFrame(new_index, columns=['Seed', 'Sample_Date', 'MSE', 'Accuracy'])
         mse_df = pd.concat([mse_df, df_extended], ignore_index=True)
             
         mse_df.to_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/Predicted_result/MSE_test", index=False)
