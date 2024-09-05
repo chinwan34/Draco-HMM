@@ -28,6 +28,19 @@ class HMMUtils:
         else:
             self.latency = n_latency_days
         self.predicted_close = None
+    
+    def XGB_pre_process(self, O)
+        pi = self.hmm.startprob_
+        A = self.hmm.transmat_
+        _, S = self.hmm.decode(O, algorithm='viterbi')  
+        gamma = self.hmm.predict_proba(O)  # Predict posterior in every state    
+
+        return S, A, gamma
+
+    def XGB_HMM(self, O, lengths):
+        pass
+ 
+
 
 
     def GMM_HMM(self, O, lengths, n_states, v_type, n_iter, verbose=True):
@@ -123,6 +136,7 @@ class HMMUtils:
         return predicted_close_prices, predicted_win_lose
 
     def predict_close_price_average(self, days):
+        # Currently not in Main, low accuracy, require improvements
         predicted_close_prices = []
         predicted_win_lose = []
         correct_wrong = []

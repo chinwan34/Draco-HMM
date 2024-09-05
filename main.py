@@ -37,11 +37,9 @@ def main_loop(arglist):
     predictor = HMMUtils(arglist=arglist)
     predictor.fit()
     print("Fit finished")
-    predictor.predict_close_price_average(arglist.days_average)
+    # predictor.predict_close_price_average(arglist.days_average)
 
-    return
-
-
+    # return
 
     if arglist.metrics:
         # temp_list = predictor.real_close_prices()["close"].tolist()
