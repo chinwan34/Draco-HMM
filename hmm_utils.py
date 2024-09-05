@@ -9,6 +9,7 @@ from datetime import timedelta
 import matplotlib.pyplot as plt
 import datetime
 from dateutil import parser
+import xgboost as xgb
 
 class HMMUtils:
     def __init__(self, arglist, test_size=0.098, n_hidden_states=4
@@ -20,6 +21,11 @@ class HMMUtils:
         # Currently avoided initial training for initial probabilities
         self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, random_state=arglist.random_state)
 
+        # If going into XGB
+        if arglist.xgb:
+            S, A, gamma = self.XGB_pre_process()
+            A, self.hmm, pi = self.XGB_XMM(S,A,gamma)
+
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = arglist.day_future
 
@@ -29,7 +35,7 @@ class HMMUtils:
             self.latency = n_latency_days
         self.predicted_close = None
     
-    def XGB_pre_process(self, O)
+    def XGB_pre_process(self, O):
         pi = self.hmm.startprob_
         A = self.hmm.transmat_
         _, S = self.hmm.decode(O, algorithm='viterbi')  
@@ -37,11 +43,218 @@ class HMMUtils:
 
         return S, A, gamma
 
-    def XGB_HMM(self, O, lengths):
-        pass
- 
+    def XGB_HMM(self,O,S,A,gamma):
+        n_states = 4
+        stop_flag = 0
+        iteration = 1
+        log_likelihood = -np.inf
+        min_delta = 1e-4
+        model = 1
 
+        prior_pi = np.array([sum(S == i) / len(S) for i in range(n_states)])
+        B_matrix = gamma / prior_pi
 
+        record_log_likelihood = []
+        best_result = []
+
+        while stop_flag <= 3:
+            A, gamma = self.prob_re_estimate(A, B_matrix, prior_pi, lengths)
+            B_matrix = gamma / prior_pi
+
+            new_S, _, new_log_likelihood = self.xgb_prediction(B_matrix, lengths, A, prior_pi)
+            record_log_likelihood.append(new_log_likelihood)
+
+            if len(best_result) == 0:
+                best_result = [A, model, prior_pi, new_log_likelihood]
+            elif new_log_likelihood > best_result[3]:
+                best_result = [A, model, prior_pi, new_log_likelihood]
+                temp = gamma
+            
+            # Check for re-evaluate ending
+            if new_log_likelihood - log_likelihood <= min_delta:
+                stop_flag += 1
+            else:
+                stop_flag = 0
+            
+            log_likelihood = new_log_likelihood
+            iteration += 1
+
+        model = self.xgb_model(O, temp, n_states)
+        best_result[1] = model
+
+        return best_result[0], best_result[1], best_result[2]
+        
+    def xgb_model(self, X, gamma, n_states):
+        # The model parameters from 
+        params = {'objective': 'multi:softprob',
+              'learning_rate': 0.01,
+              'colsample_bytree': 0.886,
+              'min_child_weight': 3,
+              'max_depth': 10,
+              'subsample': 0.886,
+              'reg_alpha': 1.5,  
+              'reg_lambda': 0.5,  
+              'gamma': 0.5, 
+              'n_jobs': -1,
+              'eval_metric': 'mlogloss',
+              'scale_pos_weight': 1,
+              'random_state': 201806,
+              'missing': None,
+              'silent': 1,
+              'max_delta_step': 0,
+              'num_class': n_states}
+
+        y = np.array([np.argmax(i) for i in gamma])
+        temp = np.array([np.max(i) for i in gamma])
+        y = y[temp >= 0.9]
+        X = X[temp >= 0.9]
+
+        sample_weight = temp[temp >= 0.9]
+        # Just a matrix specified for XGBs
+        d_train = xgb.DMatrix(X, y, weight=sample_weight)
+
+        model = xgb.train(params, d_train, num_boost_round=1000)
+        pred = np.array([np.argmax(i) for i in model.predict(d_train)])
+
+        print(sum(pred==y)/len(y))
+
+        return model
+
+    def form_index(self, lengths, index):
+        begin = sum(lengths[0:index])
+        end = begin + lengths[index]
+
+        return begin, end
+
+    def prob_re_estimate(self, A, B, pi, lengths):
+        """
+        A: (n_states, n_states): Transition Probability Matrix
+        B: (n_samples, n_states): Emission Probability Matrix
+
+        """
+        n_states = B.shape[1]
+        n_samples = B.shape[0]
+
+        # Probability of being in state S_i at time k and observe sequence up to k
+        alpha_all = np.zeros((n_samples, n_states))
+        # Probability of observing sequence from k+1 to T, given currently in S_i at time k
+        beta_all = np.zeros((n_samples, n_states))
+        # Intermediate calculation
+        di_gamma_all = np.zeros((n_samples, n_states, n_states))
+        gamma_all = np.zeros((n_samples, n_states))
+        scale_all = np.zeros(n_samples)
+
+        for k in range(len(lengths)):
+            begin, end = self.form_index(lengths, k)
+            T = end - begin
+            B_copy = B[begin:end].copy()
+            alpha = np.zeros((T, n_states))
+            beta = np.zeros((T, n_states))
+            di_gamma = np.zeros((T, n_states, n_states))
+            gamma = np.zeros((T, n_states))
+            scale = np.zeros(T)
+
+        # Step 2.1: Alpha calculation (Forward Algorithm)
+        for i in range(n_states):   # Initialization
+            alpha[0, i] = pi[i] * B[0, i]
+        scale[0] = sum(alpha[0])
+
+        for t in range(1, T):
+            for i in range(n_states):
+                alpha[t, i] = 0
+                for j in range(n_states):
+                    # THe inside equation
+                    alpha[t, i] += alpha[t-1, j] * A[j, i]
+                alpha[t, i] = alpha[t, i] * B[t, i]
+            scale[t] = 1/sum(alpha[t])
+            alpha[t] = alpha[t] * scale[t]
+
+        # Step 2.2: Beta calculation (Backward Algorithm)
+        beta[T-1] = scale[T-1]
+        for t in range (T-2, -1, -1):
+            for i in range(n_states):
+                beta[t,i] = 0
+                for j in range(n_states):
+                    beta[t,i] += A[i,j] * B[t+1, j] * beta[t+1, j]
+                beta[t, i] = scale[t] * beta[t, i]
+        
+        # Step 2.3: Calculate Gamma
+        for t in range(T-1):
+            for i in range(n_states):
+                gamma[t, i] = 0
+                for j in range(n_states):
+                    di_gamma[t, i, j] = alpha[t, i] * A[i, j] * B[t+1, j] * beta[t+1, j]
+                    gamma[t, i] += di_gamma[t, i, j]
+        
+        t = T-1
+        gamma[t] = alpha[t]
+        alpha_all[begin:end] = alpha
+        beta_all[begin:end] = beta
+        di_gamma_all[begin:end] = di_gamma
+        gamma_all[begin:end] = gamma
+        scale_all[begin:end] = scale
+
+        # Step 3.1 Re-estimate matrix A
+        # Summing All gamma in di_gamma over all gamma in gamma
+        for i in range(n_states):
+            for j in range(n_states):
+                num = 0
+                den = 0
+                for k in range(len(lengths)):
+                    begin, end = self.form_index(lengths, k)
+                    num += np.sum(di_gamma_all[begin:end, i, j])
+                    den += np.sum(gamma_all[begin:end, i])
+                A[i, j] = num / den
+        
+        return A, gamma_all
+
+    def xgb_prediction(self, B, lengths, A, pi):
+        # Viterbi Algorithm prediction for comparisons
+        # Log-ikelihood means how well the current model explains the sequence of emissions
+
+        log_likelihood_list = []
+        n_states = len(pi)
+        init_flag = 1
+
+        for i in range(len(lengths)):
+            begin, end = self.form_index(lengths, i)
+            B_copy = B[begin:end].copy()
+            curr_state = np.zeros(lengths[i])
+            curr_state_prob = np.zeros((lengths[i], n_states))
+
+            for j in range(lengths[i]):
+                if j == 0:
+                    curr_state_prob[j] = B_copy[j] * pi
+                else:
+                    for k in range(n_states):
+                        temp = curr_state_prob[j-1] * A[:, k] * B_copy[j, k]
+                        curr_state_prob[j, k] = max(temp)
+                curr_state_prob[j] = curr_state_prob[j] / np.sum(curr_state_prob[j])
+                # Update the maximum value at current step
+                curr_state[j] = np.argmax(curr_state_prob[j])
+            
+            for j in range(lengths[i]):
+                if j == 0:
+                    curr_log_likelihood = np.log(pi[int(curr_state[j])]) + np.log(B_copy[j, int(curr_state[j])])
+                else:
+                    curr_log_likelihood += np.log(A[int(curr_state[j-1]), int(curr_state[j])]) + np.log(B_copy[j, int(curr_state[j])])
+            
+            if init_flag == 1:
+                state = curr_state
+                state_prob = curr_state_prob
+                init_flag = 0
+            else:
+                state = np.hstack((state, curr_state))
+                state_prob = np.row_stack((state_prob, curr_state_prob))
+            
+            log_likelihood_list.append(curr_log_likelihood)
+        
+        log_likelihood = 0
+        for i in log_likelihood_list:
+            log_likelihood += i
+        
+        return state, state_prob, log_likelihood
+        
 
     def GMM_HMM(self, O, lengths, n_states, v_type, n_iter, verbose=True):
         model = hmm.GaussianHMM(n_components=n_states, covariance_type=v_type, n_iter=n_iter, verbose=verbose).fit(O, lengths)
