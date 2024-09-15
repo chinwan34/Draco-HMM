@@ -12,19 +12,23 @@ from dateutil import parser
 import xgboost as xgb
 
 class HMMUtils:
-    def __init__(self, arglist, test_size=0.098, n_hidden_states=4
+    def __init__(self, arglist, test_size=0.098, n_hidden_states=2
                  ,n_intervals_frac_change=50, n_intervals_frac_high=10, n_intervals_frac_low=10,n_latency_days=10):
         data = pd.read_csv("/Users/roywan/Desktop/Draco/HMM-GMM/Data/{}_{}_{}".format(arglist.ticker, arglist.resampleFreq, arglist.start_date), delimiter=',')
         self.arglist = arglist
         self.split_train_test_data(data, test_size)
         
         # Currently avoided initial training for initial probabilities
-        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, random_state=arglist.random_state)
+        observations = HMMUtils.extract_features(self.train_data)
+        lengths = [len(observations)]
+        self.hmm = hmm.GaussianHMM(n_components=n_hidden_states, random_state=arglist.random_state).fit(observations, lengths)
 
         # If going into XGB
         if arglist.xgb:
-            S, A, gamma = self.XGB_pre_process()
-            A, self.hmm, pi = self.XGB_XMM(S,A,gamma)
+            observations = HMMUtils.extract_features(self.train_data)
+            S, A, gamma = self.XGB_pre_process(observations)
+            A_result, self.xgb_model, pi = self.XGB_HMM(observations, S, A, gamma, lengths)
+            self.xgb_testing()
 
         self.compute_all_possible_outcome(n_intervals_frac_change, n_intervals_frac_high, n_intervals_frac_low)
         self.days_in_future = arglist.day_future
@@ -35,6 +39,7 @@ class HMMUtils:
             self.latency = n_latency_days
         self.predicted_close = None
     
+    
     def XGB_pre_process(self, O):
         pi = self.hmm.startprob_
         A = self.hmm.transmat_
@@ -43,8 +48,8 @@ class HMMUtils:
 
         return S, A, gamma
 
-    def XGB_HMM(self,O,S,A,gamma):
-        n_states = 4
+    def XGB_HMM(self,O,S,A,gamma,lengths):
+        n_states = 2
         stop_flag = 0
         iteration = 1
         log_likelihood = -np.inf
@@ -56,6 +61,8 @@ class HMMUtils:
 
         record_log_likelihood = []
         best_result = []
+        temp = gamma
+
 
         while stop_flag <= 3:
             A, gamma = self.prob_re_estimate(A, B_matrix, prior_pi, lengths)
@@ -66,11 +73,13 @@ class HMMUtils:
 
             if len(best_result) == 0:
                 best_result = [A, model, prior_pi, new_log_likelihood]
+                temp = gamma
             elif new_log_likelihood > best_result[3]:
                 best_result = [A, model, prior_pi, new_log_likelihood]
                 temp = gamma
             
             # Check for re-evaluate ending
+            print(new_log_likelihood, log_likelihood)
             if new_log_likelihood - log_likelihood <= min_delta:
                 stop_flag += 1
             else:
@@ -98,7 +107,7 @@ class HMMUtils:
               'n_jobs': -1,
               'eval_metric': 'mlogloss',
               'scale_pos_weight': 1,
-              'random_state': 201806,
+              'random_state': 201806,       # 201806
               'missing': None,
               'silent': 1,
               'max_delta_step': 0,
@@ -111,14 +120,35 @@ class HMMUtils:
 
         sample_weight = temp[temp >= 0.9]
         # Just a matrix specified for XGBs
-        d_train = xgb.DMatrix(X, y, weight=sample_weight)
+        d_train = xgb.DMatrix(X, y, weight=sample_weight, enable_categorical=False)
 
         model = xgb.train(params, d_train, num_boost_round=1000)
         pred = np.array([np.argmax(i) for i in model.predict(d_train)])
-
-        print(sum(pred==y)/len(y))
+        # print(sum(pred==y)/len(y))
 
         return model
+    
+    def xgb_testing(self):
+        result = self.xgb_model.predict(xgb.DMatrix(HMMUtils.extract_features(self.test_data)))
+        final = []
+        for i in range(len(result)):
+            if result[i][0] > result[i][1]:
+                final.append(1)
+            else:
+                final.append(0)
+
+        actual_close = self.test_data.loc[:, ["date", "close"]]
+        actual_result = [1 if row["open"] < row["close"] else 0 for _, row in self.test_data.iterrows()]
+        assert len(final) == len(actual_result)
+        
+        count = 0
+        for i in range(len(final)):
+            if final[i] == actual_result[i]:
+                count += 1
+        print(count)
+        print(len(final))
+        print("The final result is:", count / len(final))
+
 
     def form_index(self, lengths, index):
         begin = sum(lengths[0:index])
@@ -254,7 +284,6 @@ class HMMUtils:
             log_likelihood += i
         
         return state, state_prob, log_likelihood
-        
 
     def GMM_HMM(self, O, lengths, n_states, v_type, n_iter, verbose=True):
         model = hmm.GaussianHMM(n_components=n_states, covariance_type=v_type, n_iter=n_iter, verbose=verbose).fit(O, lengths)
@@ -289,6 +318,7 @@ class HMMUtils:
         self.hmm.fit(observations)
 
         # Need to save to pickle file
+    
 
     def compute_all_possible_outcome(self, 
                                      n_intervals_frac_change, 
@@ -301,6 +331,8 @@ class HMMUtils:
         self.possible_outcomes = np.array(
             list(itertools.product(frac_change_range, frac_high_range, frac_low_range))
         )
+
+
     
     def get_most_probable_outcome(self, day_index):
         previous_start = max(0, day_index - self.latency)
@@ -311,14 +343,22 @@ class HMMUtils:
 
         outcome_results = []
 
-        for possible_outcome in self.possible_outcomes:
-            total_data = np.row_stack((previous_data_features, possible_outcome))
-            # Compute through hmmlearn module
-            outcome_results.append(self.hmm.score(total_data))
-        
-        most_probable_outcome = self.possible_outcomes[np.argmax(outcome_results)]
-        # print("Most probable Outcome", most_probable_outcome)
+        if self.arglist.xgb:
+            for possible_outcome in self.possible_outcomes:
+                total_data = np.row_stack((previous_data_features, possible_outcome))
+                d_test = xgb.DMatrix(total_data)
+                probabilities = self.xgb_model.predict(d_test)
+                # predicted_class = np.argmax(probabilities[-1])
+                outcome_results.append(np.max(probabilities[-1]))
+        else:
+            for possible_outcome in self.possible_outcomes:
+                total_data = np.row_stack((previous_data_features, possible_outcome))
+                # Compute through hmmlearn module
+                outcome_results.append(self.hmm.score(total_data))
 
+        most_probable_outcome = self.possible_outcomes[np.argmax(outcome_results)]
+        print(np.argmax(outcome_results), np.max(outcome_results))
+        print("Most probable Outcome", most_probable_outcome)
         return most_probable_outcome
     
     def predict_close_price(self, day_index):

@@ -22,6 +22,8 @@ def parse_arguments():
     parser.add_argument("-nifh", "--n_interval_frac_high", type=int, help="Number of points for high fractional change")
     parser.add_argument("-nifl", "--n_interval_fractional_low", type=int, help="Number of points for low fractional change")
 
+    # XGB
+    parser.add_argument("-xgb", "--xgb", action="store_true", default=False, help="Enter XGB algorithm")
 
     parser.add_argument("-l", "--latency", type=int, help="Observation sequence duration")
     parser.add_argument("-m", "--metrics", action="store_true", default=False, help="Boolean for metric display")
@@ -35,7 +37,7 @@ def main_loop(arglist):
     data_retrival(arglist.ticker, arglist.resampleFreq, arglist.format, arglist.start_date)
 
     predictor = HMMUtils(arglist=arglist)
-    predictor.fit()
+    # predictor.fit()
     print("Fit finished")
     # predictor.predict_close_price_average(arglist.days_average)
 
